@@ -19,7 +19,7 @@ interface ChatSpaceProps {
 
 const LLM_MODELS = [
   { id: "gpt-4", name: "ChatGPT (GPT-4)" },
-  { id: "claude-3", name: "Claude 3" },
+  { id: "claude-3", name: "Claude 3 Sonnet" },
   { id: "gemini-pro", name: "Gemini Pro" },
 ];
 

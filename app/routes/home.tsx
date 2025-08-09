@@ -1,7 +1,9 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
+import { useFetcher } from "react-router";
 import { ChatSidebar } from "~/components/ChatSidebar";
 import { ChatSpace } from "~/components/ChatSpace";
 import { MobileSidebar } from "~/components/MobileSidebar";
+import type { ChatMessage as APIChatMessage } from "~/lib/api";
 import type { Route } from "./+types/home";
 
 export function meta() {
@@ -33,9 +35,11 @@ export default function Home({ loaderData }: Route.ComponentProps) {
   const [chats, setChats] = useState<Chat[]>([]);
   const [activeChat, setActiveChat] = useState<string | undefined>();
   const [selectedModel, setSelectedModel] = useState("gpt-4");
-  const [isLoading, setIsLoading] = useState(false);
+  const fetcher = useFetcher();
 
-  const currentChat = chats.find(chat => chat.id === activeChat);
+  const isLoading = fetcher.state === "submitting";
+
+  const currentChat = chats.find((chat) => chat.id === activeChat);
   const messages = currentChat?.messages || [];
 
   const handleNewChat = () => {
@@ -46,7 +50,7 @@ export default function Home({ loaderData }: Route.ComponentProps) {
       timestamp: new Date(),
       messages: [],
     };
-    setChats(prev => [newChat, ...prev]);
+    setChats((prev) => [newChat, ...prev]);
     setActiveChat(newChatId);
   };
 
@@ -55,16 +59,26 @@ export default function Home({ loaderData }: Route.ComponentProps) {
   };
 
   const handleDeleteChat = (chatId: string) => {
-    setChats(prev => prev.filter(chat => chat.id !== chatId));
+    setChats((prev) => prev.filter((chat) => chat.id !== chatId));
     if (activeChat === chatId) {
       setActiveChat(undefined);
     }
   };
 
   const handleSendMessage = async (content: string) => {
-    if (!activeChat) {
-      handleNewChat();
-      return;
+    let currentChatId = activeChat;
+
+    if (!currentChatId) {
+      const newChatId = `chat-${Date.now()}`;
+      const newChat: Chat = {
+        id: newChatId,
+        title: content.slice(0, 50),
+        timestamp: new Date(),
+        messages: [],
+      };
+      setChats((prev) => [newChat, ...prev]);
+      setActiveChat(newChatId);
+      currentChatId = newChatId;
     }
 
     const userMessage: Message = {
@@ -74,39 +88,82 @@ export default function Home({ loaderData }: Route.ComponentProps) {
       timestamp: new Date(),
     };
 
-    setChats(prev => prev.map(chat => 
-      chat.id === activeChat 
-        ? { 
-            ...chat, 
-            messages: [...chat.messages, userMessage],
-            title: chat.messages.length === 0 ? content.slice(0, 50) : chat.title
-          }
-        : chat
-    ));
+    setChats((prev) =>
+      prev.map((chat) =>
+        chat.id === currentChatId
+          ? {
+              ...chat,
+              messages: [...chat.messages, userMessage],
+              title:
+                chat.messages.length === 0 ? content.slice(0, 50) : chat.title,
+            }
+          : chat,
+      ),
+    );
 
-    setIsLoading(true);
+    const currentChat = chats.find((c) => c.id === currentChatId);
+    const chatHistory: APIChatMessage[] = [
+      ...(currentChat?.messages || []).map((msg) => ({
+        role: msg.role as "user" | "assistant",
+        content: msg.content,
+      })),
+      { role: "user", content },
+    ];
 
-    setTimeout(() => {
-      const assistantMessage: Message = {
-        id: `msg-${Date.now()}-assistant`,
-        content: `これは${selectedModel}からの模擬回答です。実際のLLMとの連携はまだ実装されていません。\n\nあなたのメッセージ: "${content}"`,
-        role: "assistant",
-        timestamp: new Date(),
-      };
-
-      setChats(prev => prev.map(chat => 
-        chat.id === activeChat 
-          ? { ...chat, messages: [...chat.messages, assistantMessage] }
-          : chat
-      ));
-
-      setIsLoading(false);
-    }, 1500);
+    fetcher.submit(
+      {
+        model: selectedModel,
+        messages: JSON.stringify(chatHistory),
+      },
+      {
+        method: "POST",
+        action: `/chats/${currentChatId}/send`,
+      },
+    );
   };
 
   const handleModelChange = (model: string) => {
     setSelectedModel(model);
   };
+
+  // fetcherのレスポンスを処理
+  useEffect(() => {
+    if (fetcher.state === "idle" && fetcher.data && activeChat) {
+      const response = fetcher.data;
+
+      if (response.success && response.data) {
+        const assistantMessage: Message = {
+          id: response.data.id,
+          content: response.data.content,
+          role: "assistant",
+          timestamp: new Date(response.data.timestamp),
+        };
+
+        setChats((prev) =>
+          prev.map((chat) =>
+            chat.id === activeChat
+              ? { ...chat, messages: [...chat.messages, assistantMessage] }
+              : chat,
+          ),
+        );
+      } else {
+        const errorMessage: Message = {
+          id: `msg-${Date.now()}-error`,
+          content: `エラーが発生しました: ${response.error || "不明なエラー"}`,
+          role: "assistant",
+          timestamp: new Date(),
+        };
+
+        setChats((prev) =>
+          prev.map((chat) =>
+            chat.id === activeChat
+              ? { ...chat, messages: [...chat.messages, errorMessage] }
+              : chat,
+          ),
+        );
+      }
+    }
+  }, [fetcher.state, fetcher.data, activeChat]);
 
   return (
     <div className="h-screen flex overflow-hidden">
