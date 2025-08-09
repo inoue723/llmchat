@@ -57,7 +57,7 @@ class LLMService {
     const response = await fetch("https://api.openai.com/v1/chat/completions", {
       method: "POST",
       headers: {
-        "Authorization": `Bearer ${this.apiKeys.openai}`,
+        Authorization: `Bearer ${this.apiKeys.openai}`,
         "Content-Type": "application/json",
       },
       body: JSON.stringify({
@@ -70,7 +70,9 @@ class LLMService {
 
     if (!response.ok) {
       const errorData = await response.json().catch(() => ({}));
-      throw new Error(`OpenAI API error: ${response.status} - ${errorData.error?.message || 'Unknown error'}`);
+      throw new Error(
+        `OpenAI API error: ${response.status} - ${errorData.error?.message || "Unknown error"}`,
+      );
     }
 
     const data = await response.json();
@@ -92,14 +94,16 @@ class LLMService {
       body: JSON.stringify({
         model: "claude-3-sonnet-20240229",
         max_tokens: 4000,
-        messages: messages.filter(m => m.role !== "system"),
-        system: messages.find(m => m.role === "system")?.content,
+        messages: messages.filter((m) => m.role !== "system"),
+        system: messages.find((m) => m.role === "system")?.content,
       }),
     });
 
     if (!response.ok) {
       const errorData = await response.json().catch(() => ({}));
-      throw new Error(`Claude API error: ${response.status} - ${errorData.error?.message || 'Unknown error'}`);
+      throw new Error(
+        `Claude API error: ${response.status} - ${errorData.error?.message || "Unknown error"}`,
+      );
     }
 
     const data = await response.json();
@@ -111,8 +115,8 @@ class LLMService {
       throw new Error("Google API key not configured");
     }
 
-    const prompt = messages.map(m => `${m.role}: ${m.content}`).join('\n\n');
-    
+    const prompt = messages.map((m) => `${m.role}: ${m.content}`).join("\n\n");
+
     const response = await fetch(
       `https://generativelanguage.googleapis.com/v1beta/models/gemini-pro:generateContent?key=${this.apiKeys.google}`,
       {
@@ -127,20 +131,28 @@ class LLMService {
             maxOutputTokens: 4000,
           },
         }),
-      }
+      },
     );
 
     if (!response.ok) {
       const errorData = await response.json().catch(() => ({}));
-      throw new Error(`Gemini API error: ${response.status} - ${errorData.error?.message || 'Unknown error'}`);
+      throw new Error(
+        `Gemini API error: ${response.status} - ${errorData.error?.message || "Unknown error"}`,
+      );
     }
 
     const data = await response.json();
-    return data.candidates[0]?.content?.parts[0]?.text || "No response generated";
+    return (
+      data.candidates[0]?.content?.parts[0]?.text || "No response generated"
+    );
   }
 }
 
-export async function action({ request, params, context }: Route.ActionArgs): Promise<ChatResponse> {
+export async function action({
+  request,
+  params,
+  context,
+}: Route.ActionArgs): Promise<ChatResponse> {
   if (request.method !== "POST") {
     return {
       success: false,
