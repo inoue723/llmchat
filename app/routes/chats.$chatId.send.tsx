@@ -1,4 +1,5 @@
 import type { Route } from "./+types/chats.$chatId.send";
+import { ChatService } from "../services/chatService";
 
 export interface ChatMessage {
   role: "user" | "assistant" | "system";
@@ -69,13 +70,13 @@ class LLMService {
     });
 
     if (!response.ok) {
-      const errorData = await response.json().catch(() => ({}));
+      const errorData = await response.json().catch(() => ({})) as any;
       throw new Error(
         `OpenAI API error: ${response.status} - ${errorData.error?.message || "Unknown error"}`,
       );
     }
 
-    const data = await response.json();
+    const data = await response.json() as any;
     return data.choices[0]?.message?.content || "No response generated";
   }
 
@@ -100,13 +101,13 @@ class LLMService {
     });
 
     if (!response.ok) {
-      const errorData = await response.json().catch(() => ({}));
+      const errorData = await response.json().catch(() => ({})) as any;
       throw new Error(
         `Claude API error: ${response.status} - ${errorData.error?.message || "Unknown error"}`,
       );
     }
 
-    const data = await response.json();
+    const data = await response.json() as any;
     return data.content[0]?.text || "No response generated";
   }
 
@@ -135,13 +136,13 @@ class LLMService {
     );
 
     if (!response.ok) {
-      const errorData = await response.json().catch(() => ({}));
+      const errorData = await response.json().catch(() => ({})) as any;
       throw new Error(
         `Gemini API error: ${response.status} - ${errorData.error?.message || "Unknown error"}`,
       );
     }
 
-    const data = await response.json();
+    const data = await response.json() as any;
     return (
       data.candidates[0]?.content?.parts[0]?.text || "No response generated"
     );
@@ -182,15 +183,46 @@ export async function action({
     }
 
     const llmService = new LLMService(context.cloudflare.env);
+    const chatService = new ChatService(context.cloudflare.env.DB);
+
+    // Ensure chat exists or create it
+    let chat = await chatService.getChatById(chatId);
+    if (!chat) {
+      // Create a chat with a default title based on the first user message
+      const firstUserMessage = messages.find(m => m.role === "user");
+      const title = firstUserMessage 
+        ? firstUserMessage.content.substring(0, 50) + (firstUserMessage.content.length > 50 ? "..." : "")
+        : "New Chat";
+      
+      chat = await chatService.createChat({ title });
+    }
+
+    // Add user message to database (if it's the latest message)
+    const lastMessage = messages[messages.length - 1];
+    if (lastMessage.role === "user") {
+      await chatService.addMessage({
+        chatId,
+        role: "user",
+        content: lastMessage.content,
+      });
+    }
+
     const responseContent = await llmService.sendMessage(model, messages);
+
+    // Save assistant response to database
+    const assistantMessage = await chatService.addMessage({
+      chatId,
+      role: "assistant",
+      content: responseContent,
+    });
 
     return {
       success: true,
       data: {
-        id: `msg-${Date.now()}-assistant`,
+        id: assistantMessage.id,
         content: responseContent,
         role: "assistant",
-        timestamp: new Date().toISOString(),
+        timestamp: assistantMessage.createdAt.toISOString(),
       },
     };
   } catch (error) {
